@@ -1,4 +1,5 @@
 from sqlalchemy.orm.session import Session
+from sqlalchemy import and_
 from schemas import DcInvBase, DcInvUpdate
 from db.models import DcInventory, DcUser
 from fastapi import HTTPException, status
@@ -46,6 +47,26 @@ def create_dc_inventory(db: Session, request: DcInvBase, current_user: dict):
     validate_user(db, user_id)
     validate_company(db, company_id)
 
+    # --- NEW VALIDATIONS START ---
+    # 1. Check for Duplicate Hostname
+    if db.query(DcInventory).filter(DcInventory.device_hostname == request.device_hostname).first():
+        raise HTTPException(status_code=400, detail="Hostname already exists in inventory.")
+
+    # 2. Check for Duplicate Serial Number
+    if db.query(DcInventory).filter(DcInventory.device_serial == request.device_serial).first():
+        raise HTTPException(status_code=400, detail="Serial number is already registered.")
+
+    # 3. Check for Rack Collision
+    collision = db.query(DcInventory).filter(
+        and_(
+            DcInventory.rack_name == request.rack_name,
+            DcInventory.rack_unit == request.rack_unit
+        )
+    ).first()
+    if collision:
+        raise HTTPException(status_code=400, detail=f"Rack {request.rack_name} Unit {request.rack_unit} is already occupied.")
+    # --- NEW VALIDATIONS END ---
+
     new_inventory = DcInventory(
         device_type=request.device_type,
         device_hostname=request.device_hostname,
@@ -90,6 +111,23 @@ def update_dc_inventory(db: Session, id: int, request: DcInvUpdate, current_user
 
     inventory = validate_inventory(db, id)
     update_data = request.model_dump(exclude_unset=True)
+
+    # --- NEW VALIDATIONS START (Excluding current device from checks) ---
+    if "device_hostname" in update_data:
+        if db.query(DcInventory).filter(and_(DcInventory.device_hostname == update_data["device_hostname"], DcInventory.id != id)).first():
+            raise HTTPException(status_code=400, detail="Hostname already exists.")
+            
+    if "device_serial" in update_data:
+        if db.query(DcInventory).filter(and_(DcInventory.device_serial == update_data["device_serial"], DcInventory.id != id)).first():
+            raise HTTPException(status_code=400, detail="Serial number already exists.")
+
+    if "rack_unit" in update_data or "rack_name" in update_data:
+        r_name = update_data.get("rack_name", inventory.rack_name)
+        r_unit = update_data.get("rack_unit", inventory.rack_unit)
+        collision = db.query(DcInventory).filter(and_(DcInventory.rack_name == r_name, DcInventory.rack_unit == r_unit, DcInventory.id != id)).first()
+        if collision:
+            raise HTTPException(status_code=400, detail=f"Target Rack Unit {r_unit} is occupied.")
+    # --- NEW VALIDATIONS END ---
 
     for key, value in update_data.items():
         setattr(inventory, key, value)

@@ -28,7 +28,7 @@ def get_all_dc_inventory(db: Session = Depends(get_db), current_user: UserBase =
 #  return db_inventory.get_specif_dc_inventory(db, id)
 
 # Update one Device Inventory
-@router.put('/update')
+@router.put('/update/')
 def update_dc_inventory(id: int, request: DcInvUpdate, db: Session = Depends(get_db), current_user: UserBase = Depends(get_current_user)):
   return db_inventory.update_dc_inventory(db, id, request, current_user)
 
