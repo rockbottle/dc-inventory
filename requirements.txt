@@ -6,3 +6,4 @@ bcrypt
 python-multipart
 python-jose
 pydantic
+psycopg2
